@@ -392,19 +392,17 @@
             iframe.src = iframeUrl;
         }
 
-        function printIframe() {
-            if(iframe.classList.contains('hidden') || !iframe.src) {
-                showToast("Please select a document to print first.", "error");
-                return;
-            }
-            try {
-                // Focus the iframe and call print 
-                iframe.contentWindow.focus();
-                iframe.contentWindow.print();
-            } catch(e) {
-                showToast("Use the print icon inside the document preview for security.", "error");
-            }
-        }
+       function printIframe() {
+    if(iframe.classList.contains('hidden') || !iframe.src) {
+        showToast("Please select a document to print first.", "error");
+        return;
+    }
+    
+    // Because of browser security, we cannot force-print a cross-origin Google iframe.
+    // Instead, we open the document in a new tab so the user can easily print it natively.
+    window.open(iframe.src, '_blank');
+    showToast("Opening document in a new tab for printing...", "success");
+}
 
         // --- 2. UPLOAD & DRAG/DROP LOGIC ---
         const dropZone = document.getElementById('drag-drop-zone');
