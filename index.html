@@ -249,13 +249,26 @@
         // --- CORE FETCH WRAPPER FOR GAS ---
         async function fetchBackend(payload) {
             try {
-                // We use POST with stringified body to securely bypass strict Apps Script CORS limits
+                // By forcing text/plain, we bypass strict CORS preflight checks that GAS blocks
                 const response = await fetch(GAS_WEB_APP_URL, {
                     method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=utf-8'
+                    },
                     body: JSON.stringify(payload)
                 });
-                const result = await response.json();
-                return result;
+                
+                if (!response.ok) {
+                    throw new Error(`Server connection failed (Status: ${response.status})`);
+                }
+                
+                const text = await response.text();
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    console.error("Raw response from Google:", text);
+                    throw new Error("Invalid response from server. Check your Apps Script deployment settings.");
+                }
             } catch (error) {
                 console.error("Backend communication error:", error);
                 throw error;
@@ -322,13 +335,13 @@
                     if(response.success) {
                         files = response.data;
                     } else {
-                        throw new Error(response.error);
+                        throw new Error(response.error || "Unknown error occurred.");
                     }
                 }
                 renderResults(files);
             } catch (error) {
                 console.error(error);
-                showToast("Search failed. Check your connection.", "error");
+                showToast(error.message || "Search failed. Check your connection.", "error");
             } finally {
                 document.getElementById('search-icon').classList.remove('hidden');
                 document.getElementById('search-spinner').classList.add('hidden');
@@ -548,10 +561,13 @@
                             </button>
                         `;
                     });
+                } else if (!response.success) {
+                    console.error("Google Drive Error:", response.error);
+                    showToast("Drive Error: " + response.error, "error");
                 }
             } catch(e) {
                 console.error("Could not fetch folders from Drive:", e);
-                // UI degrade gracefully, Root directory remains available
+                showToast("Connection to Drive backend failed.", "error");
             }
         });
 
