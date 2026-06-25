@@ -415,7 +415,14 @@
                 const response = await fetchBackend({ action: 'getPrintData', fileId: currentPreviewFileId });
                 if(!response.success) throw new Error(response.error);
 
-                // 2. Convert the data back into a local PDF file in the browser's memory
+                // 2. NEW: Smart Fallback Check for large files
+                if (response.data.tooLarge) {
+                    showToast("File is very large. Opening in a new tab for native printing...", "success", 5000);
+                    window.open(response.data.fallbackUrl, '_blank');
+                    return; // Stop the function here so it doesn't try to load the base64 data
+                }
+
+                // 3. Convert the data back into a local PDF file in the browser's memory
                 const byteCharacters = atob(response.data.base64);
                 const byteNumbers = new Array(byteCharacters.length);
                 for (let i = 0; i < byteCharacters.length; i++) {
@@ -425,7 +432,7 @@
                 const blob = new Blob([byteArray], {type: 'application/pdf'});
                 const blobUrl = URL.createObjectURL(blob);
 
-                // 3. Load it into a hidden window and force the native print menu to open
+                // 4. Load it into a hidden window and force the native print menu to open
                 let printIframe = document.getElementById('hidden-print-iframe');
                 if (!printIframe) {
                     printIframe = document.createElement('iframe');
@@ -445,7 +452,7 @@
 
             } catch (error) {
                 console.error(error);
-                showToast("Print failed. The file may be too large to process.", "error");
+                showToast("Print failed. Please try again.", "error");
             } finally {
                 btn.disabled = false;
                 btnText.textContent = "Direct Print";
