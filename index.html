@@ -435,28 +435,66 @@
             }
 
             try {
-                // 1. Ask Google Apps Script for the raw PDF data
-                const response = await fetchBackend({ action: 'getPrintData', fileId: fileId });
-                if(!response.success) throw new Error(response.error);
+                const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
+                let start = 0;
+                let eof = false;
+                const chunks = [];
+                let totalSize = null;
+                
+                showToast(`Preparing print for "${fileName}"...`, "success", 3000);
 
-                // 2. Smart Fallback Check for large files
-                if (response.data.tooLarge) {
-                    showToast("File is very large. Opening in a new tab for native printing...", "success", 5000);
-                    window.open(response.data.fallbackUrl, '_blank');
-                    return; // Stop the function here so it doesn't try to load the base64 data
+                while (!eof) {
+                    // Update UI with progress if we know the size
+                    if (totalSize) {
+                        const percent = Math.min(Math.round((start / totalSize) * 100), 99);
+                        if (btnEl) {
+                            btnEl.innerHTML = `<span class="text-xs font-semibold text-slate-600">${percent}%</span>`;
+                        } else {
+                            const btnText = document.getElementById('print-btn-text');
+                            btnText.textContent = `Loading ${percent}%...`;
+                        }
+                    }
+
+                    const response = await fetchBackend({
+                        action: 'getFileChunk',
+                        fileId: fileId,
+                        start: start,
+                        chunkSize: CHUNK_SIZE
+                    });
+
+                    if (!response.success) {
+                        throw new Error(response.error || "Chunk fetching failed.");
+                    }
+
+                    const data = response.data;
+                    if (data.base64) {
+                        // Decode base64 to Uint8Array
+                        const byteCharacters = atob(data.base64);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                            byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        chunks.push(byteArray);
+                    }
+
+                    totalSize = data.totalSize;
+                    eof = data.eof;
+                    start += CHUNK_SIZE;
                 }
 
-                // 3. Convert the data back into a local PDF file in the browser's memory
-                const byteCharacters = atob(response.data.base64);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
+                if (btnEl) {
+                    btnEl.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-slate-500"></i>`;
+                } else {
+                    const btnText = document.getElementById('print-btn-text');
+                    btnText.textContent = "Preparing...";
                 }
-                const byteArray = new Uint8Array(byteNumbers);
-                const blob = new Blob([byteArray], {type: 'application/pdf'});
+
+                // Concatenate all chunks into a single Blob
+                const blob = new Blob(chunks, { type: 'application/pdf' });
                 const blobUrl = URL.createObjectURL(blob);
 
-                // 4. Load it into a hidden window and force the native print menu to open
+                // Load it into a hidden window and force the native print menu to open
                 let printIframe = document.getElementById('hidden-print-iframe');
                 if (!printIframe) {
                     printIframe = document.createElement('iframe');
@@ -476,7 +514,7 @@
 
             } catch (error) {
                 console.error(error);
-                showToast(`Print failed for "${fileName}". Please try again.`, "error");
+                showToast(`Print failed for "${fileName}": ${error.message}`, "error");
             } finally {
                 if (btnEl) {
                     btnEl.disabled = false;
