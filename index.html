@@ -129,15 +129,15 @@
                     <h2 class="text-lg font-semibold text-slate-800 brand-font">Preview Window</h2>
                     <div class="flex items-center gap-4">
                         <span id="preview-filename" class="text-xs text-slate-500 truncate max-w-[200px]">No file selected</span>
-                        <button onclick="printIframe()" class="text-slate-600 hover:text-slate-900 bg-slate-200 hover:bg-slate-300 px-3 py-1.5 rounded text-sm transition-colors flex items-center gap-2" title="Print Document">
-                            <i class="fa-solid fa-print"></i> Print
-                        </button>
+                        <span class="text-xs text-slate-400 italic">
+                            <i class="fa-solid fa-circle-info mr-1"></i> Click the pop-out below for printing
+                        </span>
                     </div>
                 </div>
                 <div class="flex-grow relative bg-slate-100 flex items-center justify-center overflow-hidden" id="preview-container">
                     <div class="text-slate-400 flex flex-col items-center" id="preview-placeholder">
                         <i class="fa-regular fa-file-lines text-5xl mb-4 text-slate-300"></i>
-                        <p class="text-sm">Select a document to preview with printing option</p>
+                        <p class="text-sm">Select a document to preview</p>
                     </div>
                     <iframe id="document-iframe" class="absolute inset-0 w-full h-full hidden" src="" frameborder="0" allow="autoplay"></iframe>
                 </div>
@@ -243,15 +243,16 @@
         /**
          * CONFIGURATION connected to Real Backend
          */
-        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyyLZIZYAA9Q6aECMYtvzf68MgivFMFg5Vq8_4LgougMNoQr4B4pv7iVGwdHI0Y7fopow/exec";
+        const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwwsqxGwwJoTIb3eyphrQH5C-rCmDu-5kugJ8KcnYcoU1a1SyCqavVtuQk9I07AA_ca/exec";
         const USE_MOCK_DATA = false; // Now securely connected to Drive!
 
         // --- CORE FETCH WRAPPER FOR GAS ---
         async function fetchBackend(payload) {
             try {
-                // By forcing text/plain, we bypass strict CORS preflight checks that GAS blocks
+                // By forcing text/plain and adding redirect: 'follow', we bypass strict CORS preflight checks that GAS blocks
                 const response = await fetch(GAS_WEB_APP_URL, {
                     method: 'POST',
+                    redirect: 'follow', // Ensuring browser follows the Google 302 redirect correctly
                     headers: {
                         'Content-Type': 'text/plain;charset=utf-8'
                     },
@@ -267,7 +268,7 @@
                     return JSON.parse(text);
                 } catch (e) {
                     console.error("Raw response from Google:", text);
-                    throw new Error("Invalid response from server. Check your Apps Script deployment settings.");
+                    throw new Error("Google Apps Script returned an invalid response. This means it needs a 'New Version' deployment.");
                 }
             } catch (error) {
                 console.error("Backend communication error:", error);
@@ -287,15 +288,15 @@
         }
 
         // --- NOTIFICATION SYSTEM ---
-        function showToast(message, type = 'success') {
+        function showToast(message, type = 'success', duration = 4500) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             const bgClass = type === 'success' ? 'bg-slate-800' : 'bg-red-600';
             const iconClass = type === 'success' ? 'fa-check-circle text-green-400' : 'fa-triangle-exclamation text-white';
 
-            toast.className = `toast-animate flex items-center p-4 rounded-lg shadow-xl text-white ${bgClass} border border-slate-700`;
+            toast.className = `toast-animate flex items-center p-4 rounded-lg shadow-xl text-white ${bgClass} border border-slate-700 max-w-sm`;
             toast.innerHTML = `
-                <i class="fa-solid ${iconClass} mr-3 text-lg"></i>
+                <i class="fa-solid ${iconClass} mr-3 text-lg flex-shrink-0"></i>
                 <div class="text-sm font-medium tracking-wide">${message}</div>
             `;
             container.appendChild(toast);
@@ -305,7 +306,7 @@
                 toast.style.transform = 'translateX(100%)';
                 toast.style.transition = 'all 0.3s ease-in';
                 setTimeout(() => toast.remove(), 300);
-            }, 4500);
+            }, duration);
         }
 
         // --- 1. SEARCH & PREVIEW LOGIC ---
@@ -341,7 +342,7 @@
                 renderResults(files);
             } catch (error) {
                 console.error(error);
-                showToast(error.message || "Search failed. Check your connection.", "error");
+                showToast(error.message || "Search failed. Check deployment settings in Apps Script.", "error", 6000);
             } finally {
                 document.getElementById('search-icon').classList.remove('hidden');
                 document.getElementById('search-spinner').classList.add('hidden');
@@ -391,18 +392,6 @@
             }
             iframe.src = iframeUrl;
         }
-
-       function printIframe() {
-    if(iframe.classList.contains('hidden') || !iframe.src) {
-        showToast("Please select a document to print first.", "error");
-        return;
-    }
-    
-    // Because of browser security, we cannot force-print a cross-origin Google iframe.
-    // Instead, we open the document in a new tab so the user can easily print it natively.
-    window.open(iframe.src, '_blank');
-    showToast("Opening document in a new tab for printing...", "success");
-}
 
         // --- 2. UPLOAD & DRAG/DROP LOGIC ---
         const dropZone = document.getElementById('drag-drop-zone');
@@ -565,7 +554,8 @@
                 }
             } catch(e) {
                 console.error("Could not fetch folders from Drive:", e);
-                showToast("Connection to Drive backend failed.", "error");
+                // Updated this error to point to the exact issue!
+                showToast("Drive connection failed. Check GAS Deployment settings (Must be 'Anyone' and 'New Version').", "error", 8000);
             }
         });
 
