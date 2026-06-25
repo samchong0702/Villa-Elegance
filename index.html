@@ -369,14 +369,28 @@
                 else if(file.mimeType && (file.mimeType.includes('word') || file.mimeType.includes('document'))) icon = 'fa-file-word text-blue-400';
                 else if(file.mimeType && file.mimeType.includes('spreadsheet')) icon = 'fa-file-excel text-green-400';
                 
-                li.className = "flex items-center gap-3 p-3 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-200 group";
+                li.className = "flex items-center justify-between p-2.5 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors border border-transparent hover:border-slate-200 group";
                 li.innerHTML = `
-                    <div class="w-8 h-8 rounded bg-white border border-slate-100 flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow">
-                        <i class="fa-solid ${icon}"></i>
+                    <div class="flex items-center gap-3 truncate min-w-0 flex-1">
+                        <div class="w-8 h-8 rounded bg-white border border-slate-100 flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow">
+                            <i class="fa-solid ${icon}"></i>
+                        </div>
+                        <span class="text-sm font-medium text-slate-700 group-hover:text-slate-900 truncate">${file.name}</span>
                     </div>
-                    <span class="text-sm font-medium text-slate-700 group-hover:text-slate-900 truncate">${file.name}</span>
+                    <button class="print-row-btn p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-md transition-colors flex-shrink-0 flex items-center justify-center" title="Print document directly">
+                        <i class="fa-solid fa-print"></i>
+                    </button>
                 `;
-                li.addEventListener('click', () => loadPreview(file));
+                
+                li.addEventListener('click', (e) => {
+                    const printBtn = e.target.closest('.print-row-btn');
+                    if (printBtn) {
+                        e.stopPropagation();
+                        directPrintFile(file.id, file.name, printBtn);
+                    } else {
+                        loadPreview(file);
+                    }
+                });
                 resultsList.appendChild(li);
             });
         }
@@ -401,21 +415,31 @@
                 showToast("Please select a document to print first.", "error");
                 return;
             }
-            
-            const btn = document.getElementById('print-btn');
-            const btnText = document.getElementById('print-btn-text');
-            const spinner = document.getElementById('print-spinner');
-            
-            btn.disabled = true;
-            btnText.textContent = "Loading...";
-            spinner.classList.remove('hidden');
+            await directPrintFile(currentPreviewFileId, previewFilename.textContent);
+        }
+
+        async function directPrintFile(fileId, fileName, btnEl = null) {
+            let originalContent = '';
+            if (btnEl) {
+                btnEl.disabled = true;
+                originalContent = btnEl.innerHTML;
+                btnEl.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin text-slate-500"></i>`;
+            } else {
+                const btn = document.getElementById('print-btn');
+                const btnText = document.getElementById('print-btn-text');
+                const spinner = document.getElementById('print-spinner');
+                
+                btn.disabled = true;
+                btnText.textContent = "Loading...";
+                spinner.classList.remove('hidden');
+            }
 
             try {
                 // 1. Ask Google Apps Script for the raw PDF data
-                const response = await fetchBackend({ action: 'getPrintData', fileId: currentPreviewFileId });
+                const response = await fetchBackend({ action: 'getPrintData', fileId: fileId });
                 if(!response.success) throw new Error(response.error);
 
-                // 2. NEW: Smart Fallback Check for large files
+                // 2. Smart Fallback Check for large files
                 if (response.data.tooLarge) {
                     showToast("File is very large. Opening in a new tab for native printing...", "success", 5000);
                     window.open(response.data.fallbackUrl, '_blank');
@@ -452,11 +476,19 @@
 
             } catch (error) {
                 console.error(error);
-                showToast("Print failed. Please try again.", "error");
+                showToast(`Print failed for "${fileName}". Please try again.`, "error");
             } finally {
-                btn.disabled = false;
-                btnText.textContent = "Direct Print";
-                spinner.classList.add('hidden');
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = originalContent;
+                } else {
+                    const btn = document.getElementById('print-btn');
+                    const btnText = document.getElementById('print-btn-text');
+                    const spinner = document.getElementById('print-spinner');
+                    btn.disabled = false;
+                    btnText.textContent = "Direct Print";
+                    spinner.classList.add('hidden');
+                }
             }
         }
 
