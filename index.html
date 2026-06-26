@@ -508,59 +508,25 @@
                     throw new Error(`Server returned status ${response.status}`);
                 }
 
-                // 2. Get the PDF as an ArrayBuffer (binary data)
+                // 2. Validate returned content type
+                const contentType = response.headers.get('content-type') || '';
+                if (!contentType.includes('application/pdf')) {
+                    const text = await response.text();
+                    console.error('Non-PDF response received:', contentType, text);
+                    throw new Error('Backend returned invalid PDF content. Check Apps Script logs.');
+                }
+
+                // 3. Get the PDF as an ArrayBuffer (binary data)
                 const pdfArrayBuffer = await response.arrayBuffer();
-                
                 if (pdfArrayBuffer.byteLength === 0) {
-                    throw new Error("Received empty PDF file");
+                    throw new Error('Received empty PDF file');
                 }
 
-                // 3. Load into PDF.js
-                const pdf = await pdfjsLib.getDocument({ data: pdfArrayBuffer }).promise;
-                
-                // 4. Create a hidden canvas-based print container
-                let printContainer = document.getElementById('pdf-print-container');
-                if (!printContainer) {
-                    printContainer = document.createElement('div');
-                    printContainer.id = 'pdf-print-container';
-                    printContainer.style.display = 'none';
-                    document.body.appendChild(printContainer);
-                }
-                printContainer.innerHTML = ''; // Clear previous
+                // 4. Create a blob URL from the raw PDF bytes
+                const blob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
+                const blobUrl = URL.createObjectURL(blob);
 
-                // 5. Render each PDF page to canvas and convert to image
-                const pages = [];
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                    const page = await pdf.getPage(pageNum);
-                    const viewport = page.getViewport({ scale: 2 }); // 2x for print quality
-                    const canvas = document.createElement('canvas');
-                    const context = canvas.getContext('2d');
-                    
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
-                    
-                    await page.render({
-                        canvasContext: context,
-                        viewport: viewport
-                    }).promise;
-                    
-                    pages.push(canvas.toDataURL('image/png'));
-                }
-
-                // 6. Create an HTML document with all pages for printing
-                let printHtml = '<html><head><style>';
-                printHtml += 'body { margin: 0; padding: 0; } ';
-                printHtml += 'img { display: block; width: 100%; margin: 0; page-break-after: always; } ';
-                printHtml += '@page { margin: 0; } ';
-                printHtml += '</style></head><body>';
-                
-                pages.forEach(dataUrl => {
-                    printHtml += `<img src="${dataUrl}" />`;
-                });
-                
-                printHtml += '</body></html>';
-
-                // 7. Open in hidden iframe and trigger print
+                // 5. Open in hidden iframe and trigger print
                 let printIframe = document.getElementById('hidden-print-iframe');
                 if (!printIframe) {
                     printIframe = document.createElement('iframe');
@@ -573,13 +539,11 @@
                     setTimeout(() => {
                         printIframe.contentWindow.focus();
                         printIframe.contentWindow.print();
+                        URL.revokeObjectURL(blobUrl);
                     }, 300);
                 };
 
-                // Write content to iframe
-                printIframe.contentDocument.open();
-                printIframe.contentDocument.write(printHtml);
-                printIframe.contentDocument.close();
+                printIframe.src = blobUrl;
 
             } catch (error) {
                 console.error(error);
